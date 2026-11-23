@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flowers made of code</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #020307; }
+  body { display: grid; place-items: center; font-family: Georgia, serif; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  .caption {
+    position: fixed; top: 8%; left: 50%; transform: translateX(-50%);
+    color: #eee6d5; text-align: center; font-size: clamp(18px, 3vw, 34px);
+    font-style: italic; text-shadow: 0 2px 12px #000; pointer-events: none;
+    white-space: nowrap;
+  }
+  .hint {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: #8d929e; font: 12px Arial, sans-serif; opacity: .7;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="garden"></canvas>
+<div class="caption">Жижигхэн цэцгийн баглаа</div>
+<div class="hint">Дахин дарж цэцэглүүлээрэй</div>
+<script>
+(() => {
+  const canvas = document.getElementById('garden');
+  const ctx = canvas.getContext('2d');
+  let w, h, dpr, start = performance.now(), flowers = [], stars = [];
+
+  function resize() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    w = innerWidth; h = innerHeight;
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    makeGarden();
+  }
+  const rand = (a,b) => a + Math.random()*(b-a);
+
+  function makeGarden() {
+    flowers = [];
+    stars = Array.from({length: 150}, () => ({
+      x: rand(0,w), y: rand(0,h), r: rand(.35,1.5), a: rand(.15,.8), p: rand(0,6.28)
+    }));
+    const count = Math.max(7, Math.min(13, Math.round(w/85)));
+    const palette = [
+      ['#f13b55','#ff9b9e','#8e172e'],
+      ['#ed4db5','#ffb3df','#842b75'],
+      ['#f5e8c9','#fff8e8','#b99a73'],
+      ['#f3c943','#fff09a','#a87519'],
+      ['#bd83ed','#e3c5ff','#7142a8'],
+      ['#dc6545','#ffc18b','#8f352b']
+    ];
+    for (let i=0; i<count; i++) {
+      const x = w * (.14 + .72*(i/(count-1 || 1))) + rand(-18,18);
+      const height = h * rand(.24,.43);
+      const yBase = h * rand(.84,.94);
+      const paletteSet = palette[i % palette.length];
+      flowers.push({
+        x, yBase, height, lean: rand(-.12,.12), size: rand(.62,1.05),
+        color: paletteSet, delay: rand(0,2.2), bloom: rand(.82,1.18),
+        petals: Math.floor(rand(7,11)), phase: rand(0,6.28),
+        leaves: Math.floor(rand(3,6))
+      });
+    }
+    // a few taller stems behind the main bouquet
+    for (let i=0; i<Math.max(3, count/3); i++) {
+      flowers.push({
+        x: w*rand(.2,.8), yBase:h*.91, height:h*rand(.38,.53),
+        lean:rand(-.18,.18), size:rand(.35,.55),
+        color:['#9b4059','#d18aaf','#6e2846'], delay:rand(0,1.5),
+        bloom:rand(.8,1.1), petals:7, phase:rand(0,6.28), leaves:3, back:true
+      });
+    }
+  }
+
+  function ease(t) { return 1 - Math.pow(1-t, 3); }
+  function stemPoint(f, t) {
+    const sway = Math.sin(t*2.8 + f.phase) * 8;
+    return {
+      x: f.x + f.lean*f.height*t + sway*t,
+      y: f.yBase - f.height*t
+    };
+  }
+
+  function drawLeaf(f, t, side, growth) {
+    const p = stemPoint(f,t);
+    const len = f.height * .12 * f.size * growth;
+    const angle = side * (0.62 + f.lean);
+    ctx.save();
+    ctx.translate(p.x,p.y);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.quadraticCurveTo(len*.5,-len*.55,len,-len*.08);
+    ctx.quadraticCurveTo(len*.55,len*.35,0,0);
+    const g = ctx.createLinearGradient(0,0,len,0);
+    g.addColorStop(0,'#174c2e'); g.addColorStop(.55,'#4b9b52'); g.addColorStop(1,'#9cc66c');
+    ctx.fillStyle=g; ctx.fill();
+    ctx.strokeStyle='rgba(184,225,133,.55)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(len*.48,-len*.02,len, -len*.08);
+    ctx.strokeStyle='rgba(196,229,147,.65)'; ctx.lineWidth=.7; ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawFlower(f, now) {
+    const raw = (now - start)/1000 - f.delay;
+    const growth = ease(Math.max(0, Math.min(1, raw/3.4)));
+    if (growth <= 0) return;
+    const tip = stemPoint(f, growth);
+    // stem
+    ctx.beginPath();
+    ctx.moveTo(f.x, f.yBase);
+    const mid = stemPoint(f, growth*.52);
+    ctx.quadraticCurveTo(mid.x- f.lean*12, mid.y, tip.x, tip.y);
+    ctx.strokeStyle = '#39834a'; ctx.lineWidth = f.back ? 1.5 : 2.2; ctx.stroke();
+
+    for (let j=0; j<f.leaves; j++) {
+      const t = .18 + j*.13;
+      if (growth > t) drawLeaf(f,t,j%2===0?1:-1,Math.min(1,(growth-t)*4));
+    }
+
+    const bloomT = Math.max(0, Math.min(1,(raw-1.5)/2.2));
+    const open = ease(bloomT) * f.bloom;
+    if (open <= 0) {
+      // unopened bud
+      ctx.save(); ctx.translate(tip.x,tip.y);
+      ctx.fillStyle='#a94b68'; ctx.beginPath(); ctx.ellipse(0,-5,4,9,0,0,Math.PI*2); ctx.fill();
+      ctx.restore(); return;
+    }
+
+    const radius = (f.back ? 12 : Math.min(w,h)*.036) * f.size;
+    const petalCount = f.petals;
+    ctx.save();
+    ctx.translate(tip.x,tip.y);
+    ctx.rotate(Math.sin(raw*.7+f.phase)*.045);
+    // soft glow
+    const glow=ctx.createRadialGradient(0,0,1,0,0,radius*2.5);
+    glow.addColorStop(0,'rgba(255,220,230,.14)'); glow.addColorStop(1,'rgba(255,220,230,0)');
+    ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(0,0,radius*2.5,0,Math.PI*2); ctx.fill();
+
+    for(let k=0;k<petalCount;k++) {
+      const a = k*Math.PI*2/petalCount + f.phase;
+      ctx.save(); ctx.rotate(a);
+      const L=radius*(.92+ .18*Math.sin(k*2.1+f.phase))*open;
+      const width=radius*.38*open;
+      const grad=ctx.createLinearGradient(0,-L,0,5);
+      grad.addColorStop(0,f.color[1]); grad.addColorStop(.48,f.color[0]); grad.addColorStop(1,f.color[2]);
+      ctx.fillStyle=grad;
+      ctx.beginPath();
+      ctx.moveTo(0,2);
+      ctx.bezierCurveTo(-width,-L*.28,-width*.72,-L*.88,0,-L);
+      ctx.bezierCurveTo(width*.72,-L*.88,width,-L*.28,0,2);
+      ctx.fill();
+      ctx.strokeStyle='rgba(255,235,225,.24)'; ctx.lineWidth=.7; ctx.stroke();
+      // central vein
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(width*.08,-L*.5,0,-L*.88);
+      ctx.strokeStyle='rgba(255,245,220,.28)'; ctx.lineWidth=.65; ctx.stroke();
+      ctx.restore();
+    }
+    // layered inner petals
+    for(let k=0;k<Math.floor(petalCount*.65);k++) {
+      ctx.save(); ctx.rotate(k*Math.PI*2/(petalCount*.65)+f.phase+.3);
+      ctx.scale(.66,.66);
+      ctx.fillStyle=f.color[k%2];
+      ctx.beginPath(); ctx.ellipse(0,-radius*.55,radius*.25,radius*.55,0,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+    const center=ctx.createRadialGradient(-2,-3,1,0,0,radius*.3);
+    center.addColorStop(0,'#fff4b5'); center.addColorStop(.5,'#d99b3e'); center.addColorStop(1,'#5b3822');
+    ctx.fillStyle=center; ctx.beginPath(); ctx.arc(0,0,radius*.25,0,Math.PI*2); ctx.fill();
+    for(let k=0;k<18;k++) {
+      const a=k*2.399, r=radius*.17;
+      ctx.fillStyle=k%2?'#fff0a4':'#6b3d24';
+      ctx.beginPath(); ctx.arc(Math.cos(a)*r,Math.sin(a)*r,1.1,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function draw(now) {
+    ctx.clearRect(0,0,w,h);
+    const bg=ctx.createRadialGradient(w*.5,h*.7,0,w*.5,h*.7,Math.max(w,h)*.75);
+    bg.addColorStop(0,'#10131b'); bg.addColorStop(.55,'#05070d'); bg.addColorStop(1,'#010205');
+    ctx.fillStyle=bg; ctx.fillRect(0,0,w,h);
+    for(const s of stars) {
+      const twinkle=.5+.5*Math.sin(now*.001+s.p);
+      ctx.globalAlpha=s.a*twinkle;
+      ctx.fillStyle='#dce6ff'; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+    // ground haze
+    const haze=ctx.createLinearGradient(0,h*.76,0,h);
+    haze.addColorStop(0,'rgba(25,65,39,0)'); haze.addColorStop(1,'rgba(18,52,31,.26)');
+    ctx.fillStyle=haze; ctx.fillRect(0,h*.7,w,h*.3);
+    flowers.filter(f=>f.back).forEach(f=>drawFlower(f,now));
+    flowers.filter(f=>!f.back).forEach(f=>drawFlower(f,now));
+    requestAnimationFrame(draw);
+  }
+  function restart(){ start=performance.now(); makeGarden(); }
+  canvas.addEventListener('click',restart);
+  addEventListener('resize',resize);
+  resize();
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
